@@ -1,0 +1,146 @@
+---
+name: sync
+description: >
+  Use this skill to bundle the user's ai-job-search working directory (filled profile, CVs, cover letters, tracked applications, documents) into a single .tar.gz file for transfer between machines, or to restore a previously created bundle. Same skill covers both directions. Trigger phrases: sync profile, archive workspace, backup profile, restore from bundle, 同步, 打包, 还原, 迁移, bundle.
+context: fork
+allowed-tools: Bash(python3 .claude/skills/sync/bin/archive.py *) Bash(python3 .claude/skills/sync/bin/restore.py *) Bash(chmod *)
+---
+
+# Sync
+
+Bundle the user's ai-job-search working directory (filled profile, CVs, cover letters, tracked applications, documents) into a single .tar.gz for transfer between machines, or restore a previously created bundle. The bundle is an overlay, not a mirror: existing files are overwritten, files outside the bundle stay.
+
+Typical use: write a new CV on the work laptop, archive, copy to USB / email / cloud / scp / git LFS, restore on the home desktop.
+
+## Quick Reference
+
+### Pack (source machine)
+
+```bash
+# Default output: ~/.ai-job-search-bundles/bundle-YYYY-MM-DD-HHMM.tar.gz
+python3 .claude/skills/sync/bin/archive.py
+
+# Custom output path
+python3 .claude/skills/sync/bin/archive.py -o ~/Desktop/profile-bundle.tar.gz
+
+# See what would be packed (no file written)
+python3 .claude/skills/sync/bin/archive.py --dry-run
+
+# Verbose
+python3 .claude/skills/sync/bin/archive.py -v
+```
+
+### Restore (target machine)
+
+```bash
+# Overlay to current dir
+python3 .claude/skills/sync/bin/restore.py ~/Downloads/bundle-XXX.tar.gz
+
+# Overlay to a specific dir
+python3 .claude/skills/sync/bin/restore.py ~/Downloads/bundle-XXX.tar.gz -t ~/ai-job-search -v
+
+# See what would be extracted (no writes)
+python3 .claude/skills/sync/bin/restore.py ~/Downloads/bundle-XXX.tar.gz --dry-run
+
+# Skip manifest integrity check (not recommended)
+python3 .claude/skills/sync/bin/restore.py ~/Downloads/bundle-XXX.tar.gz --skip-verify
+```
+
+## What gets packed
+
+| Path | Why |
+|------|-----|
+| `CLAUDE.md` | Your filled candidate profile |
+| `.claude/skills/job-application-assistant/01-candidate-profile.md` | Full structured profile |
+| `.claude/skills/job-application-assistant/02-behavioral-profile.md` | Behavioral profile |
+| `.claude/skills/job-application-assistant/04-job-evaluation.md` | Personalized scoring framework |
+| `.claude/skills/job-application-assistant/05-cv-templates.md` | CV profile-statement templates |
+| `.claude/skills/job-application-assistant/06-cover-letter-templates.md` | Cover letter templates (if edited) |
+| `.claude/skills/job-application-assistant/07-interview-prep.md` | STAR examples + AI talking points |
+| `.claude/skills/job-scraper/search-queries.md` | Personalized search queries |
+| `cv/*.tex` | LaTeX CV source files (master + role-specific) |
+| `cover_letters/*.tex` | LaTeX cover letter source files |
+| `documents/**/*` | LinkedIn export / reference letters / diplomas / job postings |
+| `company_research/*.json` | `/apply` Step 3 company-research cache |
+| `applications/**/*` | Tracked applications (outcome / cv_draft / cover_letter / job_posting) |
+| `seen_jobs.json` | `/scrape` dedup file (if present) |
+| `tools/**/*` | Any tools you add later |
+
+## What does NOT get packed
+
+- `.git/` - synced via git
+- Framework-owned files in `.claude/skills/job-application-assistant/`: `03-writing-style.md` / `08-application-forms.md` / `09-web-research.md` / `SKILL.md` - synced via git pull
+- `.claude/skills/job-scraper/SKILL.md` and `.agents/skills/*` - synced via git
+- LaTeX build artifacts: `*.pdf` / `*.aux` / `*.log` / `*.out` / `*.synctex.gz` / `*.bbl` / `*.blg` / `*.toc` / `*.fls` / `*.fdb_latexmk` / `*.nav` / `*.snm` / `*.vrb` - rebuilt on target with `lualatex`
+- Dependency dirs: `**/node_modules/` / `**/__pycache__/`
+- Lockfiles: `**/bun.lockb` / `**/package-lock.json` / `**/yarn.lock`
+- Temp files: `*.swp` / `*.bak` / `*~` / `.DS_Store` / `Thumbs.db`
+
+## Bundle structure
+
+Each archive run produces two files side by side:
+
+```
+bundle-2026-08-28-143022.tar.gz
+bundle-2026-08-28-143022.manifest.json
+```
+
+- `tar.gz` holds the data with relative paths (no leading `/mnt/d/.../ai-job-search/`)
+- `manifest.json` records: creation time, source dir, total file count, total size, per-file size + SHA256, and a bundle-level SHA256
+
+`restore.py` validates the bundle-level SHA256 and each per-file SHA256 by default. Use `--skip-verify` only if you trust the channel.
+
+## Safety
+
+- **Path traversal guard**: `restore.py` rejects members with absolute paths or `..` segments
+- **Overlay, not mirror**: bundle files overwrite, files outside the bundle are not deleted (clone the template repo first, then restore, framework files stay intact)
+- **SHA256 end-to-end check**: per-file + bundle-level, default on
+- **dry-run**: both scripts support it, show the plan before writing
+
+## Standard sync workflow
+
+### Source machine
+
+```bash
+cd ~/ai-job-search
+python3 .claude/skills/sync/bin/archive.py -v
+# produces ~/.ai-job-search-bundles/bundle-YYYY-MM-DD-HHMM.tar.gz
+# produces ~/.ai-job-search-bundles/bundle-YYYY-MM-DD-HHMM.manifest.json
+```
+
+Copy the two files to a USB / GitHub Release (private) / cloud / scp, any way you trust.
+
+### Target machine
+
+```bash
+# First time only: clone the template repo (framework + portal CLIs)
+git clone https://github.com/OneTick/ai-job-search.git ~/ai-job-search
+cd ~/ai-job-search
+
+# Copy the bundle over
+cp ~/Downloads/bundle-2026-08-28-143022.tar.gz ./
+cp ~/Downloads/bundle-2026-08-28-143022.manifest.json ./
+
+# Restore
+python3 .claude/skills/sync/bin/restore.py ./bundle-2026-08-28-143022.tar.gz -v
+
+# Verify (optional): compile a CV to confirm LaTeX is set up
+cd cv && lualatex main_example.tex
+```
+
+Maintenance: `git pull` for framework updates, bundle only carries your personal data.
+
+## Customizing include / exclude
+
+Edit the two lists at the top of `bin/archive.py`. Common tweaks:
+
+- Exclude `documents/` entirely (large / private): move `documents/**/*` from INCLUDE to EXCLUDE
+- Add a custom dir like `notes/`: append it to INCLUDE
+- Pin local config: add `.env` / `*.key` patterns to EXCLUDE (default already covers most)
+
+## Troubleshooting
+
+- "Manifest integrity check failed" - bundle was corrupted in transit. Recopy and verify with `sha256sum bundle-XXX.tar.gz`. If still failing, repack on the source
+- Chinese filenames garbled after extract - rare, usually old Python + Windows. Upgrade to Python 3.8+
+- Want to peek inside a bundle without extracting: `tar -tzf bundle-XXX.tar.gz | head -50`
+- Need to keep a file out but don't want to edit the script: move it outside the working directory
