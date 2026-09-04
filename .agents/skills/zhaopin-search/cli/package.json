@@ -1,0 +1,23 @@
+{
+  "name": "zhaopin-cli",
+  "version": "1.0.0",
+  "description": "CLI for searching jobs on Zhaopin.com (智联招聘) via a real browser (Playwright) — needed because non-browser clients are blocked by bot detection. Beijing/China market. Personal use only.",
+  "type": "module",
+  "main": "src/cli.ts",
+  "bin": {
+    "zhaopin-search": "src/cli.ts"
+  },
+  "scripts": {
+    "start": "bun run src/cli.ts",
+    "test": "bun test --timeout 120000",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "playwright": "1.60.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.4.0",
+    "@types/bun": "1.3.14",
+    "bun": "^1.3.14"
+  }
+}

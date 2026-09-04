@@ -110,5 +110,10 @@ company_research/*.json
 .agents/**/*.log
 .agents/usage/
 
+# Portal CLI login sessions (zhaopin-search: cookie storageState — never commit)
+.agents/skills/zhaopin-search/.auth/
+
 # Brainstorm mockups (superpowers visual companion) - never ship
 .superpowers/
+
+.playwright-cli
