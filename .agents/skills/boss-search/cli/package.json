@@ -1,0 +1,23 @@
+{
+  "name": "boss-cli",
+  "version": "1.0.0",
+  "description": "CLI for searching jobs on Boss直聘 (zhipin.com) via CDP attach to a real, logged-in Chrome — community-validated approach to Boss's anti-bot stack. Beijing/China market. Personal use only.",
+  "type": "module",
+  "main": "src/cli.ts",
+  "bin": {
+    "boss-search": "src/cli.ts"
+  },
+  "scripts": {
+    "start": "bun run src/cli.ts",
+    "test": "bun test --timeout 180000",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "playwright": "1.60.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.4.0",
+    "@types/bun": "1.3.14",
+    "bun": "^1.3.14"
+  }
+}
