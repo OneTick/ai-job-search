@@ -25,8 +25,12 @@ from pathlib import Path
 # 配置: 自定义时改这里
 # ---------------------------------------------------------------------------
 
-# 包含的路径模式(POSIX glob 风格, 相对源目录)
+# 包含的路径模式(POSIX glob 风格, 相对源目录)。
+# 口径: git 里只放干净模板, 所有个人产出走 bundle —— 与 .gitignore 的
+# "Personal data" 分区一一对应; 编译产物 (pdf/docx) 是交付物, 一并打包,
+# 到目标机可直接覆盖使用。
 INCLUDE_PATTERNS = [
+    # 档案/配置(git HEAD 是干净模板, 个人化内容只存在于本地)
     "CLAUDE.md",
     ".claude/skills/job-application-assistant/01-candidate-profile.md",
     ".claude/skills/job-application-assistant/02-behavioral-profile.md",
@@ -35,12 +39,28 @@ INCLUDE_PATTERNS = [
     ".claude/skills/job-application-assistant/06-cover-letter-templates.md",
     ".claude/skills/job-application-assistant/07-interview-prep.md",
     ".claude/skills/job-scraper/search-queries.md",
-    "cv/*.tex",
-    "cover_letters/*.tex",
+    # CV / 求职信: 源文件 + 编译产出(pdf/docx/md/txt 提取层)
+    # main_* / cover_* 前缀与 .gitignore 的 personal 输出规则对齐,
+    # 中间产物 .aux/.log/.out 由 EXCLUDE 拦掉
+    "cv/main_*.*",
+    "cv/*.txt",
+    "cover_letters/cover_*.*",
+    "cover_letters/Cover_*.*",
+    # documents/ 全部个人资料(证书/LinkedIn 导出/参考文献等, 含 pdf/图片)
     "documents/**/*",
-    "company_research/*.json",
+    # /apply 产出与申请追踪
     "applications/**/*",
-    "seen_jobs.json",
+    "job_search_tracker.csv",
+    "reports/**/*",
+    "company_research/*.json",
+    # 各 skill 的个人状态与报告:实际位置随 skill 相对解析变化
+    # (根目录 或 .claude/skills/<skill>/ 子目录), 必须 ** 前缀才能都匹配
+    "**/job_scraper/seen_jobs.json",
+    "**/job_scraper/notion_sync.json",
+    "**/job_scraper/*.md",
+    "**/upskill/report-*.md",
+    "upskill/*.md",
+    "gmail_sync/**/*",
     "tools/**/*",
 ]
 
@@ -57,8 +77,7 @@ EXCLUDE_PATTERNS = [
     "**/package-lock.json",
     "**/yarn.lock",
     "**/pnpm-lock.yaml",
-    # LaTeX 编译产物
-    "**/*.pdf",
+    # LaTeX 中间产物(pdf/docx 是交付物, 不在此列; .out 由 lualatex 重生成)
     "**/*.aux",
     "**/*.log",
     "**/*.out",
@@ -74,6 +93,10 @@ EXCLUDE_PATTERNS = [
     "**/*.xdv",
     "**/*.run.xml",
     "**/*.bcf",
+    # 占位文件与登录会话(cookie 属敏感凭证, 换机重新登录即可)
+    "**/.gitkeep",
+    "**/.auth",
+    "**/.auth/**",
     # 临时 / 系统文件
     "**/.DS_Store",
     "**/Thumbs.db",
@@ -82,6 +105,9 @@ EXCLUDE_PATTERNS = [
     "**/*.swo",
     "**/*.bak",
     "**/*.tmp",
+    # 会话转录(Claude Code 对话导出, 不是求职产出)
+    "conversion.txt",
+    "cv/09021016.txt",
     # 输出 / 编译目录
     "**/dist/**",
     "**/build/**",
@@ -248,7 +274,11 @@ def main():
             for rel, _, size, h in files
         ],
     }
-    manifest_path = output.with_suffix(".manifest.json")
+    # restore.py 按 <bundle>.manifest.json (去掉 .tar.gz) 查找 manifest,
+    # with_suffix(".gz") 只会替换最后一级后缀, 会错写成 *.tar.manifest.json
+    manifest_path = output.with_name(
+        output.name.removesuffix(".tar.gz") + ".manifest.json"
+    )
     with open(manifest_path, "w", encoding="utf-8") as f:
         json.dump(manifest, f, ensure_ascii=False, indent=2)
 

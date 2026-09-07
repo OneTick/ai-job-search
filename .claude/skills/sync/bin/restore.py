@@ -100,7 +100,11 @@ def main():
         sys.exit(1)
     target.mkdir(parents=True, exist_ok=True)
 
-    manifest_path = bundle.with_suffix(".manifest.json")
+    # 与 archive.py 对齐: manifest 文件名是去掉整个 .tar.gz 后缀再加
+    # .manifest.json, with_suffix 只替换最后一级后缀会错找 *.tar.manifest.json
+    manifest_path = bundle.with_name(
+        bundle.name.removesuffix(".tar.gz") + ".manifest.json"
+    )
 
     if not args.skip_verify:
         print("校验 manifest ...")
