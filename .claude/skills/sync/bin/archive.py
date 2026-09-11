@@ -140,6 +140,12 @@ def matches_any(path_str, patterns):
         # x/** 等价于 x/ 下的所有内容
         if pat.endswith("/**") and norm.startswith(pat[:-3] + "/"):
             return True
+        # x/**/* 同样覆盖 x/ 下的所有内容 —— fnmatch 的 * 会跨 "/",
+        # 导致 "dir/**/*" 实际要求 dir 下至少还有一层目录,
+        # dir 顶层的单层文件(如 tools/foo.py、documents/bar.pdf)会漏打
+        idx = pat.find("/**/*")
+        if idx > 0 and norm.startswith(pat[:idx] + "/"):
+            return True
     return False
 
 
