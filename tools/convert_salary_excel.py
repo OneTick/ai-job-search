@@ -52,6 +52,9 @@ COMPOUND_PATTERNS = {"antal", "indeks", "løn", "gennemsnit", "medarbejdere"}
 # data. They are dropped at classification so they are not mistaken for a salary
 # category. Matched as whole tokens only, like other pattern sets.
 ID_PATTERNS = {"id", "personnummer"}
+# Category name for a count/index pair whose headers carry no category word at
+# all ("Count" + "Index"). Matches the top-level category in README_SALARY_TOOL.md.
+DEFAULT_CATEGORY = "all_employees"
 
 
 def parse_numeric_cell(value):
@@ -127,15 +130,47 @@ def detect_column_type(header):
 
 def parse_sheet(ws, sheet_label=None):
     """Parse a single worksheet into a list of company entries and detected categories."""
-    # Find header row
+    # Find header row. Two passes:
+    #
+    # Strict pass: a candidate row needs a company-pattern cell AND a
+    # DIFFERENT cell matching a city/count/index pattern. Corroboration must
+    # come from a separate cell - a single free-text sentence can pack both
+    # a company-pattern word and a count-pattern word together (e.g. "...
+    # opdelt efter arbejdsgiver, antal svar 1234"), and that must not read
+    # as a header any more than a citation mentioning just one of them does.
+    # A real header row always has these as separate columns.
+    #
+    # Fallback pass: some real headers have no recognizable city/count/index
+    # column at all (e.g. "Company | Base pay 2025 | Bonus 2025" - neither
+    # data header matches a known pattern, so they're picked up later as
+    # untyped/standalone categories). Nothing can corroborate a company match
+    # there, so if the strict pass finds no row in the first 10, fall back to
+    # the original any-cell-mentions-company rule.
+    rows = list(ws.iter_rows(min_row=1, max_row=10, values_only=False))
+
+    def _cell_texts(row):
+        return [str(cell.value).strip() for cell in row if cell.value]
+
     header_row = None
-    for row_idx, row in enumerate(ws.iter_rows(min_row=1, max_row=10, values_only=False), start=1):
-        for cell in row:
-            if cell.value and header_matches(str(cell.value), COMPANY_PATTERNS):
+    for row_idx, row in enumerate(rows, start=1):
+        cell_texts = _cell_texts(row)
+        company_idxs = {i for i, t in enumerate(cell_texts) if header_matches(t, COMPANY_PATTERNS)}
+        if not company_idxs:
+            continue
+        other_idxs = {
+            i
+            for i, t in enumerate(cell_texts)
+            if header_matches(t, CITY_PATTERNS) or header_matches(t, COUNT_PATTERNS) or header_matches(t, INDEX_PATTERNS)
+        }
+        if other_idxs - company_idxs:
+            header_row = row_idx
+            break
+
+    if header_row is None:
+        for row_idx, row in enumerate(rows, start=1):
+            if any(header_matches(t, COMPANY_PATTERNS) for t in _cell_texts(row)):
                 header_row = row_idx
                 break
-        if header_row:
-            break
 
     if header_row is None:
         print(f"Warning: Could not find header row in sheet '{ws.title}'. Skipping.", file=sys.stderr)
@@ -184,7 +219,14 @@ def parse_sheet(ws, sheet_label=None):
         else:
             untyped_cols.append((col_idx, col_header))
 
-    # Pair count/index columns by matching category name
+    # Pair count/index columns by matching category name. A bare "Count" /
+    # "Index" pair (Danish "Antal" / "Lønindeks") strips to an empty name on
+    # both sides - the single-category layout the README's "auto-pairs
+    # count/index columns" line describes. It is still one pair, so it gets
+    # the README's default category name instead of being emitted as two
+    # unrelated standalone columns: salary_lookup renders that split as a
+    # count row whose index reads "N/A*", i.e. "too few employees to publish
+    # (privacy)", about a company with a published headcount.
     categories = []
     used_counts = set()
     used_indexes = set()
@@ -193,8 +235,8 @@ def parse_sheet(ws, sheet_label=None):
         for ii, (i_idx, i_header, i_cat) in enumerate(index_cols):
             if ii in used_indexes:
                 continue
-            if c_cat and i_cat and c_cat == i_cat:
-                cat_name = c_cat.replace(" ", "_").replace("-", "_")
+            if c_cat == i_cat:
+                cat_name = (c_cat or DEFAULT_CATEGORY).replace(" ", "_").replace("-", "_")
                 categories.append({
                     "name": cat_name,
                     "count_col": c_idx,
@@ -221,6 +263,14 @@ def parse_sheet(ws, sheet_label=None):
     # Untyped columns become standalone
     for col_idx, col_header in untyped_cols:
         categories.append({"name": col_header.lower().replace(" ", "_"), "value_col": col_idx})
+
+    if not categories:
+        print(
+            f"Warning: No salary data columns detected in sheet '{ws.title}' "
+            "(only a company/city column was found) - the header row may be "
+            "wrong, or this sheet has no salary data.",
+            file=sys.stderr,
+        )
 
     # Parse data rows
     companies = []
@@ -277,7 +327,21 @@ def parse_sheet(ws, sheet_label=None):
     return companies
 
 
+def _force_utf8_output() -> None:
+    """Write UTF-8 whatever the host's default encoding is.
+
+    A piped stdout on Windows defaults to the ANSI code page (cp1252 on most
+    Western installs), so printing a company, title or file name outside it
+    raised UnicodeEncodeError before the workflow saw any output.
+    """
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)  # absent on a StringIO under test
+        if reconfigure:
+            reconfigure(encoding="utf-8")
+
+
 def main():
+    _force_utf8_output()
     parser = argparse.ArgumentParser(
         description="Convert salary Excel data to JSON"
     )
